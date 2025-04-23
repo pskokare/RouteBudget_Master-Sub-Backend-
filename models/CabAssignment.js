@@ -41,7 +41,10 @@ const TripDetailSchema = new mongoose.Schema({
         image: { type: [String] },
         details: { type: String },
         amount: { type: [Number] }
-    }
+    },
+    
+    
+
 }, { _id: false }); // Prevents subdocument _id creation
 
 
@@ -69,6 +72,10 @@ const CabAssignmentSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: "Admin", // Tracks which admin assigned the cab
         required: true,
+    },
+    cabDate: {
+        type: Date,
+        default: Date.now,
     },
     tripDetails: TripDetailSchema,
 }, { timestamps: true });

@@ -1,4 +1,4 @@
-const Cab = require("../models/CabsDetails");
+const Cab = require("../models/CabAssignment");
 const path = require("path");
 const Driver = require("../models/loginModel")
 const mongoose = require("mongoose");
@@ -312,16 +312,14 @@ const cabList = async (req, res) => {
   }
 };
 
-
 const cabExpensive = async (req, res) => {
   try {
     const adminId = req.admin.id;
     const { fromDate, toDate } = req.query;
- 
-    // Build dynamic query
-    const query = { addedBy: adminId };
 
-    // Add date filter if both dates are provided
+    // Build dynamic query
+    const query = { assignedBy: adminId };
+
     if (fromDate && toDate) {
       query.cabDate = {
         $gte: new Date(fromDate),
@@ -329,32 +327,31 @@ const cabExpensive = async (req, res) => {
       };
     }
 
-    // Fetch filtered cabs
-    const cabs = await Cab.find(query);
- 
+    // Populate cab details
+    const cabs = await Cab.find(query).populate('cab');
+
     if (cabs.length === 0) {
       return res.status(404).json({ success: false, message: "No cabs found for the given criteria." });
     }
 
- 
-    // Calculate expenses per cab
+    // Calculate expenses
     const expenses = cabs.map((cab) => {
-      // Sum the amounts in each category (handle arrays properly)
-      const totalExpense =
-        (cab.fuel?.amount?.reduce((a, b) => a + b, 0) || 0) +
-        (cab.fastTag?.amount?.reduce((a, b) => a + b, 0) || 0) +
-        (cab.tyrePuncture?.repairAmount?.reduce((a, b) => a + (b || 0), 0) || 0) +
-        (cab.otherProblems?.amount?.reduce((a, b) => a + b, 0) || 0);
+      const fuel = cab.tripDetails?.fuel?.amount?.reduce((a, b) => a + (b || 0), 0) || 0;
+      const fastTag = cab.tripDetails?.fastTag?.amount?.reduce((a, b) => a + (b || 0), 0) || 0;
+      const tyrePuncture = cab.tripDetails?.tyrePuncture?.repairAmount?.reduce((a, b) => a + (b || 0), 0) || 0;
+      const otherProblems = cab.tripDetails?.otherProblems?.amount?.reduce((a, b) => a + (b || 0), 0) || 0;
+
+      const totalExpense = fuel + fastTag + tyrePuncture + otherProblems;
 
       return {
-        cabNumber: cab.cabNumber,
+        cabNumber: cab.cab?.cabNumber || "N/A",
         cabDate: cab.cabDate,
         totalExpense,
         breakdown: {
-          fuel: cab.fuel?.amount?.reduce((a, b) => a + b, 0) || 0,
-          fastTag: cab.fastTag?.amount?.reduce((a, b) => a + b, 0) || 0,
-          tyrePuncture: cab.tyrePuncture?.repairAmount?.reduce((a, b) => a + (b || 0), 0) || 0,
-          otherProblems: cab.otherProblems?.amount?.reduce((a, b) => a + b, 0) || 0,
+          fuel,
+          fastTag,
+          tyrePuncture,
+          otherProblems,
         },
       };
     });
@@ -362,15 +359,19 @@ const cabExpensive = async (req, res) => {
     // Sort by highest total expense
     expenses.sort((a, b) => b.totalExpense - a.totalExpense);
 
- 
     if (expenses.length === 0) {
       return res.status(404).json({ success: false, message: "No expenses found after calculation!" });
     }
 
     res.status(200).json({ success: true, data: expenses });
   } catch (error) {
-     res.status(500).json({ message: "Server Error", error: error.message });
+    res.status(500).json({ message: "Server Error", error: error.message });
   }
 };
+
+
+
+
+
  
 module.exports = { getCabs, getCabById, addCab, updateCab, deleteCab, cabList, cabExpensive };
