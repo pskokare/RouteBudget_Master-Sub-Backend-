@@ -1,7 +1,7 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const Admin = require("../models/Admin");
-const Cab = require("../models/Cab");
+const Cab = require("../models/CabAssignment");
 const Driver = require("../models/loginModel");
 require("dotenv").config();
 const Expense = require("../models/subAdminExpenses");
@@ -412,47 +412,48 @@ const addExpense = async (req, res) => {
 // Get all expenses
 const getAllExpenses = async (req, res) => {
   try {
-    // Fetch all cabs added by this admin
-    const cabs = await Cab.find();
+    const cabs = await Cab.find().populate('cab');
 
     if (cabs.length === 0) {
-      return res
-        .status(404)
-        .json({ success: false, message: "No cabs found for this admin." });
+      return res.status(404).json({
+        success: false,
+        message: "No cabs found for this admin.",
+      });
     }
 
+    const expenses = cabs.map((assign) => {
+      const fuelAmounts = assign.tripDetails?.fuel?.amount || [];
+      const fastTagAmounts = assign.tripDetails?.fastTag?.amount || [];
+      const tyreRepairAmounts = assign.tripDetails?.tyrePuncture?.repairAmount || [];
+      const otherAmounts = assign.tripDetails?.otherProblems?.amount || [];
 
-    // Manually calculate total expenses
-    const expenses = cabs.map((cab) => {
-      const totalExpense =
-        (cab.fuel?.amount || 0) +
-        (cab.fastTag?.amount || 0) +
-        (cab.tyrePuncture?.repairAmount || 0) +
-        (cab.otherProblems?.amount || 0);
+      const fuelTotal = fuelAmounts.reduce((sum, val) => sum + (val || 0), 0);
+      const fastTagTotal = fastTagAmounts.reduce((sum, val) => sum + (val || 0), 0);
+      const tyreTotal = tyreRepairAmounts.reduce((sum, val) => sum + (val || 0), 0);
+      const otherTotal = otherAmounts.reduce((sum, val) => sum + (val || 0), 0);
+
+      const totalExpense = fuelTotal + fastTagTotal + tyreTotal + otherTotal;
 
       return {
-        cabNumber: cab.cabNumber,
+        cabNumber: assign.cab?.cabNumber || "Unknown", // <-- correct path
         totalExpense,
         breakdown: {
-          fuel: cab.fuel?.amount || 0,
-          fastTag: cab.fastTag?.amount || 0,
-          tyrePuncture: cab.tyrePuncture?.repairAmount || 0,
-          otherProblems: cab.otherProblems?.amount || 0,
-        },
+          fuel: fuelTotal,
+          fastTag: fastTagTotal,
+          tyrePuncture: tyreTotal,
+          otherProblems: otherTotal,
+        }
       };
     });
 
     // Sort by highest expense first
     expenses.sort((a, b) => b.totalExpense - a.totalExpense);
 
-
     if (expenses.length === 0) {
-      return res
-        .status(404)
-        .json({
-          success: false,
-          message: "No expenses found after calculation!",
-        });
+      return res.status(404).json({
+        success: false,
+        message: "No expenses found after calculation!",
+      });
     }
 
     res.status(200).json({ success: true, data: expenses });
@@ -460,6 +461,7 @@ const getAllExpenses = async (req, res) => {
     res.status(500).json({ message: "Server Error", error: error.message });
   }
 };
+
 
 // Delete an expense
 const deleteExpense = async (req, res) => {
