@@ -2,6 +2,8 @@
 const express = require("express");
 const router = express.Router();
 const Cab = require("../models/CabsDetails");
+const Driver = require("../models/loginModel");
+const Cabassigment = require('../models/CabAssignment')
 const upload = require("../middleware/uploadFields");
 const { authMiddleware, isAdmin } = require("../middleware/authMiddleware");
 const { driverAuthMiddleware } = require("../middleware/driverAuthMiddleware");
@@ -297,6 +299,17 @@ router.get("/", authMiddleware, isAdmin, async (req, res) => {
     try {
         const cabs = await Cab.find({ addedBy: req.admin.id });
         res.status(200).json(cabs);
+    } catch (error) {
+        res.status(500).json({ error: "Server error", details: error.message });
+    }
+});
+
+router.get("/driver", driverAuthMiddleware, async (req, res) => {
+    try {
+
+        const driver = await Driver.findById(req.driver.id );
+        const adminsCab = await Cab.find({ addedBy: driver.addedBy });
+        res.status(200).json({"Driver Detail":driver,"Cab Admin":adminsCab});
     } catch (error) {
         res.status(500).json({ error: "Server error", details: error.message });
     }

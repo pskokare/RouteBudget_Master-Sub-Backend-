@@ -14,6 +14,15 @@ const masterAdminSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  // OTP-based password reset fields
+  resetOTP: {
+    type: String,
+    default: null,
+  },
+  resetOTPExpiry: {
+    type: Date,
+    default: null,
+  }
 }, { timestamps: true });
 
 // Compare password method

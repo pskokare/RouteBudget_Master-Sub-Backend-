@@ -1,11 +1,13 @@
 const express = require('express');
 const router = express.Router();
-const { assignCab, getAssignCab, unassignCab,getAssignDriver,EditDriverProfile, completeTrip,assignTripToDriver,updateTripDetailsByDriver  } = require('../controllers/cabAssignmentController')
+const { assignCab, getAssignCab, unassignCab,getAssignDriver,EditDriverProfile, completeTrip,assignTripToDriver,updateTripDetailsByDriver,driverAssignCab  } = require('../controllers/cabAssignmentController')
 const { authMiddleware, isAdmin } = require("../middleware/authMiddleware");
 const { driverAuthMiddleware } = require("../middleware/driverAuthMiddleware");
 const upload  = require("../middleware/uploadFields")
 // ✅ Assign a Cab to a Driver
 router.post('/', authMiddleware,isAdmin ,assignCab)
+
+router.post('/driver/cabassign', driverAuthMiddleware,driverAssignCab)
 
 // ✅ Get all assigned cabs with driver details
 router.get('/', authMiddleware,isAdmin ,getAssignCab)

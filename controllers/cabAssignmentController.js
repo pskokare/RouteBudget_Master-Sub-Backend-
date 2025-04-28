@@ -248,6 +248,49 @@ const assignCab = async (req, res) => {
   }
 };
 
+// ✅ Assign a cab to a driver
+const driverAssignCab = async (req, res) => {
+  try {
+    const {cabNumber,assignedBy } = req.body;
+    const driverId = req.driver.id;
+
+    if (!driverId || !cabNumber || !assignedBy) {
+      return res.status(400).json({ message: 'Driver ID, Cab Number, and Assigned By are required' });
+    }
+
+    const cab = mongoose.Types.ObjectId.isValid(cabNumber)
+      ? await Cab.findById(cabNumber)
+      : await Cab.findOne({ cabNumber });
+
+    if (!cab) return res.status(404).json({ message: 'Cab not found' });
+
+    const existingDriverAssignment = await CabAssignment.findOne({
+      driver: driverId,
+      status: { $ne: "completed" }
+    });
+    if (existingDriverAssignment)
+      return res.status(400).json({ message: 'This driver already has an active cab assigned' });
+
+    const existingCabAssignment = await CabAssignment.findOne({
+      cab: cab._id,
+      status: { $ne: "completed" }
+    });
+    if (existingCabAssignment)
+      return res.status(400).json({ message: 'This cab is already assigned to another driver' });
+
+    const newAssignment = new CabAssignment({
+      driver: driverId,
+      cab: cab._id,
+      assignedBy
+    });
+
+    await newAssignment.save();
+    res.status(201).json({ message: 'Cab assigned successfully', assignment: newAssignment });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
 // ✅ Mark a trip as completed (call this from driver or sub-admin when trip ends)
 const completeTrip = async (req, res) => {
   try {
@@ -330,5 +373,6 @@ module.exports = {
   getAssignDriver,
   completeTrip,
   assignTripToDriver,
-  updateTripDetailsByDriver
+  updateTripDetailsByDriver,
+  driverAssignCab
 };
