@@ -3,12 +3,14 @@ const jwt = require("jsonwebtoken");
 const Admin = require("../models/Admin");
 const Cab = require("../models/CabAssignment");
 const Driver = require("../models/loginModel");
+const CabDetails = require("../models/CabsDetails");
 require("dotenv").config();
 const Expense = require("../models/subAdminExpenses");
 const Analytics = require("../models/SubadminAnalytics");
 const nodemailer = require("nodemailer");
 const crypto = require('crypto');
 
+// const Expense = require("../models/Expense");
 
 // ✅ Configure Nodemailer
 const transporter = nodemailer.createTransport({
@@ -521,6 +523,87 @@ const addAnalytics = async (req, res) => {
   }
 };
 
+
+
+const getSubadminExpenses = async (req, res) => {
+  try {
+    // Fetch all required data in parallel to improve performance
+    const [subadmins, trips, drivers, cabDetails] = await Promise.all([
+      Admin.find(),
+      Cab.find().populate('cab').populate('assignedBy').populate("driver"),
+      Driver.find(),
+      CabDetails.find(),
+    ]);
+
+    if (!trips || trips.length === 0) {
+      return res.status(404).json({ success: false, message: "No trips found!" });
+    }
+
+    // Aggregate expenses by subadmin
+    const subadminExpenseMap = new Map();
+
+    // Process each trip to calculate expenses
+    trips.forEach((trip) => {
+      const subadminId = trip.assignedBy?._id?.toString();
+      const subadminName = trip.assignedBy?.name || "N/A";
+
+      if (!subadminId) return; // Skip trips without a valid subadmin
+
+      // Calculate expenses for this trip
+      const fuel = trip.tripDetails?.fuel?.amount?.reduce((a, b) => a + (b || 0), 0) || 0;
+      const fastTag = trip.tripDetails?.fastTag?.amount?.reduce((a, b) => a + (b || 0), 0) || 0;
+      const tyrePuncture = trip.tripDetails?.tyrePuncture?.repairAmount?.reduce((a, b) => a + (b || 0), 0) || 0;
+      const otherProblems = trip.tripDetails?.otherProblems?.amount?.reduce((a, b) => a + (b || 0), 0) || 0;
+      const totalExpense = fuel + fastTag + tyrePuncture + otherProblems;
+
+      // Initialize or update the subadmin's data in the map
+      if (!subadminExpenseMap.has(subadminId)) {
+        subadminExpenseMap.set(subadminId, {
+          SubAdmin: subadminName,
+          totalExpense: 0,
+          breakdown: { fuel: 0, fastTag: 0, tyrePuncture: 0, otherProblems: 0 },
+          tripCount: 0,
+        });
+      }
+
+      const subadminData = subadminExpenseMap.get(subadminId);
+      subadminData.totalExpense += totalExpense;
+      subadminData.breakdown.fuel += fuel;
+      subadminData.breakdown.fastTag += fastTag;
+      subadminData.breakdown.tyrePuncture += tyrePuncture;
+      subadminData.breakdown.otherProblems += otherProblems;
+      subadminData.tripCount += 1;
+    });
+
+    // Calculate total drivers and cabs per subadmin
+    subadminExpenseMap.forEach((subadminData, subadminId) => {
+      // Count drivers for this subadmin
+      const totalDrivers = drivers.filter(driver => 
+        driver.addedBy?._id?.toString() === subadminId
+      ).length;
+
+      // Count cabs for this subadmin
+      const totalCabs = cabDetails.filter(cabDetail => 
+        cabDetail.addedBy?.toString() === subadminId
+      ).length;
+
+      subadminData.totalDrivers = totalDrivers;
+      subadminData.totalCabs = totalCabs;
+    });
+
+    // Convert the map to an array and sort by total expense
+    const expenses = Array.from(subadminExpenseMap.values()).sort((a, b) => b.totalExpense - a.totalExpense);
+
+    if (expenses.length === 0) {
+      return res.status(404).json({ success: false, message: "No expenses found after calculation!" });
+    }
+
+    res.status(200).json({ success: true, data: expenses });
+  } catch (error) {
+    console.error("Error in getSubadminExpenses:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
 // ✅ Export all functions correctly
 module.exports = {
   registerAdmin,
@@ -540,4 +623,5 @@ module.exports = {
   updateExpense,
   getAnalytics,
   addAnalytics,
+  getSubadminExpenses
 };

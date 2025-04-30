@@ -2,6 +2,9 @@ const bcrypt = require('bcryptjs');
 const MasterAdmin = require('../models/masterAdmin');  // Correct the model to MasterAdmin
 const SubAdmin = require('../models/Admin');
 const { Resend } = require("resend");
+const Driver = require("../models/loginModel");
+const CabDetails = require("../models/CabsDetails");
+const CabAssigned = require("../models/CabAssignment");
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -137,5 +140,28 @@ exports.resetPassword = async (req, res) => {
     return res.status(200).json({ message: "Password reset successful" });
   } catch (err) {
     return res.status(500).json({ message: "Internal Server Error" });
+  }
+  
+};
+
+exports.getCabDetails =  async (req, res) => {
+  try {
+      const adminId = req.query.admin;// Get logged-in admin's
+
+      // Fetch only drivers assigned to this admin
+      const drivers = await Driver.find({ addedBy: adminId });
+      const cabs = await CabDetails.find({ addedBy: adminId });
+      const assignedCabs = await CabAssigned.find({assignedBy: adminId });
+
+      res.status(200).json({
+       
+          totalDrivers: drivers.length,
+       
+          totalCabs: cabs.length,
+
+          totalCabAssigned :assignedCabs.length
+        });
+            } catch (error) {
+      res.status(500).json({ message: "Server Error", error: error.message });
   }
 };

@@ -13,7 +13,8 @@ const {
   toggleBlockStatus,
   totalDriver,
   totalCab,
-  getAllExpenses
+  getAllExpenses,
+  getSubadminExpenses
 } = require("../controllers/adminController");
 const { sendSubAdminEmail, loginSubAdmin } = require("../controllers/emailController");
 const upload = require("../middleware/uploadMiddleware");
@@ -50,6 +51,8 @@ router.post("/login", loginSubAdmin);
 
 router.get("/", getAnalytics);
 router.post("/", addAnalytics)
+
+router.get("/subadmin-expenses", getSubadminExpenses);
 
 router.post(
   "/upload-profile",

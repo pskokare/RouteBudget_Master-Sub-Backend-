@@ -1,11 +1,12 @@
 const express = require('express');
 const { registerMasterAdmin, adminLogin, sendOTP,
-  verifyOTP,
-  resetPassword,} = require('../controllers/masterController');
+  verifyOTP,resetPassword,getCabDetails} = require('../controllers/masterController');
 const router = express.Router();
 
 // Register Master Admin
 router.post('/register-master-admin', registerMasterAdmin);
+
+router.get("/get-cab-details", getCabDetails);
 
 // Master Admin Login
 router.post('/login-master-admin', adminLogin);
