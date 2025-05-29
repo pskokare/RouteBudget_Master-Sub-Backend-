@@ -16,7 +16,7 @@ const server = http.createServer(app)
 // Enable CORS for all routes
 app.use(
   cors({
-    origin: ["http://localhost:3000", "http://localhost:5000" ,"https://admin.expengo.com/","https://car-expenses-backend.vercel.app/"],
+    origin: ["*"],
     methods: ["GET", "POST", "PUT" ,"PATCH", "DELETE", "OPTIONS"],
     credentials: true,
     allowedHeaders: ["Content-Type", "Authorization"],

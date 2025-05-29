@@ -4,6 +4,75 @@ const Driver = require('../models/loginModel');
 const Cab = require('../models/CabsDetails');
 const mongoose = require('mongoose');
 
+
+const getFreeCabsForDriver = async (req, res) => {
+  try {
+    const driverId = req.driver._id;
+
+    const driver = await Driver.findById(driverId);
+    if (!driver) {
+      return res.status(404).json({ message: "Driver not found" });
+    }
+
+    const adminId = driver.addedBy;
+
+    // Fetch all assignments and cabs added by this admin concurrently
+    const [assignments, allCabs] = await Promise.all([
+      CabAssignment.find({ assignedBy: adminId }),
+      Cab.find({ addedBy: adminId })
+    ]);
+
+    const assignedCabIds = new Set(
+      assignments
+        .filter(assgn => assgn.status === "assigned" && assgn.cab?._id)
+        .map(assgn => assgn.cab._id.toString())
+    );
+
+    const freeCabs = allCabs.filter(cab => !assignedCabIds.has(cab._id.toString()));
+
+    res.status(200).json({ freeCabs });
+  } catch (err) {
+    res.status(500).json({
+      message: "Error fetching free cabs for driver",
+      error: err.message
+    });
+  }
+};
+
+const freeCabDriver = async (req, res) => {
+  try {
+    const adminId = req.admin._id;
+
+    // Fetch assignments, drivers, and cabs concurrently
+    const [assignments, allDrivers, allCabs] = await Promise.all([
+      CabAssignment.find({ assignedBy: adminId }),
+      Driver.find({ addedBy: adminId }),
+      Cab.find({ addedBy: adminId })
+    ]);
+
+    const assignedCabIds = new Set();
+    const assignedDriverIds = new Set();
+
+    assignments.forEach(assgn => {
+      if (assgn.status === "assigned") {
+        if (assgn.cab?._id) assignedCabIds.add(assgn.cab._id.toString());
+        if (assgn.driver?._id) assignedDriverIds.add(assgn.driver._id.toString());
+      }
+    });
+
+    const freeDrivers = allDrivers.filter(driver => !assignedDriverIds.has(driver._id.toString()));
+    const freeCabs = allCabs.filter(cab => !assignedCabIds.has(cab._id.toString()));
+
+    res.status(200).json({ freeDrivers, freeCabs });
+  } catch (err) {
+    res.status(500).json({
+      message: "Error fetching free cabs and drivers",
+      error: err.message
+    });
+  }
+};
+
+
 const assignTripToDriver = async (req, res) => {
   try {
     const { driverId, cabNumber, assignedBy } = req.body;
@@ -51,125 +120,102 @@ const updateTripDetailsByDriver = async (req, res) => {
     const assignment = await CabAssignment.findOne({
       driver: driverId,
       status: { $ne: "completed" },
-    });
+    }).select('tripDetails driver cab status');
 
     if (!assignment) {
       return res.status(404).json({ message: "No active trip found for this driver." });
     }
 
     const files = req.files || {};
-    const body = req.body;
+    const body = req.body || {};
+    const trip = assignment.tripDetails || {};
 
-    const sanitizeKeys = (obj) => {
-      const sanitized = {};
-      for (const key in obj) {
-        sanitized[key.trim()] = obj[key];
-      }
-      return sanitized;
-    };
+    // Utility: Sanitize keys
+    const sanitizedBody = Object.fromEntries(
+      Object.entries(body).map(([k, v]) => [k.trim(), v])
+    );
 
-    const sanitizedBody = sanitizeKeys(body);
-
-    const parseJSONSafely = (data, fallback = {}) => {
+    // Utility: Safe JSON parsing
+    const parseJSON = (val) => {
+      if (typeof val !== "string") return val || {};
       try {
-        return typeof data === "string" ? JSON.parse(data) : data;
+        return JSON.parse(val);
       } catch {
-        return fallback;
+        return {};
       }
     };
 
-    const extractImageArray = (fieldName) =>
-      Array.isArray(files[fieldName]) ? files[fieldName].map((f) => f.path) : [];
+    // Utility: Extract file paths
+    const extractPaths = (field) =>
+      Array.isArray(files[field]) ? files[field].map(f => f.path) : [];
 
-    const appendArray = (existing = [], incoming) => {
-      if (!incoming) return existing;
-      return Array.isArray(incoming) ? [...existing, ...incoming] : [...existing, incoming];
-    };
+    // Utility: Merge arrays
+    const mergeArray = (existing = [], incoming) =>
+      existing.concat(Array.isArray(incoming) ? incoming : [incoming]).filter(Boolean);
 
-    const calculateKmTravelled = (meterReadings) => {
-      let totalMeters = 0;
-      for (let i = 1; i < meterReadings.length; i++) {
-        const diff = meterReadings[i] - meterReadings[i - 1];
-        if (diff > 0) {
-          totalMeters += diff;
-        }
-      }
-      return Math.round(totalMeters); // in KM
-    };
+    // Utility: Calculate distance
+    const calculateKm = (meters) =>
+      meters.reduce((acc, curr, i, arr) =>
+        i === 0 ? acc : acc + Math.max(0, curr - arr[i - 1]), 0
+      );
 
-    if (!assignment.tripDetails) {
-      assignment.tripDetails = {};
-    }
-
-    const trip = assignment.tripDetails;
+    // === Process Fields ===
 
     if (sanitizedBody.location) {
-      const parsedLocation = parseJSONSafely(sanitizedBody.location);
-      trip.location = { ...trip.location, ...parsedLocation };
+      trip.location = { ...trip.location, ...parseJSON(sanitizedBody.location) };
     }
 
     if (sanitizedBody.fuel) {
-      const fuel = parseJSONSafely(sanitizedBody.fuel);
+      const fuel = parseJSON(sanitizedBody.fuel);
       trip.fuel = {
         ...trip.fuel,
         ...fuel,
-        amount: appendArray(trip?.fuel?.amount, fuel.amount),
-        receiptImage: appendArray(trip?.fuel?.receiptImage, extractImageArray("receiptImage")),
-        transactionImage: appendArray(trip?.fuel?.transactionImage, extractImageArray("transactionImage")),
+        amount: mergeArray(trip.fuel?.amount, fuel.amount),
+        receiptImage: mergeArray(trip.fuel?.receiptImage, extractPaths("receiptImage")),
+        transactionImage: mergeArray(trip.fuel?.transactionImage, extractPaths("transactionImage")),
       };
     }
 
     if (sanitizedBody.fastTag) {
-      const tag = parseJSONSafely(sanitizedBody.fastTag);
+      const tag = parseJSON(sanitizedBody.fastTag);
       trip.fastTag = {
         ...trip.fastTag,
         ...tag,
-        amount: appendArray(trip?.fastTag?.amount, tag.amount),
+        amount: mergeArray(trip.fastTag?.amount, tag.amount),
       };
     }
 
     if (sanitizedBody.tyrePuncture) {
-      const tyre = parseJSONSafely(sanitizedBody.tyrePuncture);
+      const tyre = parseJSON(sanitizedBody.tyrePuncture);
       trip.tyrePuncture = {
         ...trip.tyrePuncture,
         ...tyre,
-        repairAmount: appendArray(trip?.tyrePuncture?.repairAmount, tyre.repairAmount),
-        image: appendArray(trip?.tyrePuncture?.image, extractImageArray("punctureImage")),
+        repairAmount: mergeArray(trip.tyrePuncture?.repairAmount, tyre.repairAmount),
+        image: mergeArray(trip.tyrePuncture?.image, extractPaths("punctureImage")),
       };
     }
 
     if (sanitizedBody.vehicleServicing) {
-      const service = parseJSONSafely(sanitizedBody.vehicleServicing);
-
-      const existingMeter = Array.isArray(trip.vehicleServicing?.meter) ? trip.vehicleServicing.meter : [];
-      let newMeterArray = [...existingMeter];
-
-      // Push new meter if valid
-      const newMeter = Number(service?.meter);
-      if (!isNaN(newMeter)) {
-        newMeterArray.push(newMeter);
-      }
-
-      const kmTravelled = calculateKmTravelled(newMeterArray);
-
+      const service = parseJSON(sanitizedBody.vehicleServicing);
+      const meters = mergeArray(trip.vehicleServicing?.meter, Number(service?.meter)).filter(n => !isNaN(n));
       trip.vehicleServicing = {
         ...trip.vehicleServicing,
         ...service,
-        amount: appendArray(trip?.vehicleServicing?.amount, service.amount),
-        meter: newMeterArray,
-        kmTravelled,
-        image: appendArray(trip?.vehicleServicing?.image, extractImageArray("vehicleServicingImage")),
-        receiptImage: appendArray(trip?.vehicleServicing?.receiptImage, extractImageArray("vehicleServicingReceiptImage")),
+        amount: mergeArray(trip.vehicleServicing?.amount, service.amount),
+        meter: meters,
+        kmTravelled: calculateKm(meters),
+        image: mergeArray(trip.vehicleServicing?.image, extractPaths("vehicleServicingImage")),
+        receiptImage: mergeArray(trip.vehicleServicing?.receiptImage, extractPaths("vehicleServicingReceiptImage")),
       };
     }
 
     if (sanitizedBody.otherProblems) {
-      const other = parseJSONSafely(sanitizedBody.otherProblems);
+      const other = parseJSON(sanitizedBody.otherProblems);
       trip.otherProblems = {
         ...trip.otherProblems,
         ...other,
-        amount: appendArray(trip?.otherProblems?.amount, other.amount),
-        image: appendArray(trip?.otherProblems?.image, extractImageArray("otherProblemsImage")),
+        amount: mergeArray(trip.otherProblems?.amount, other.amount),
+        image: mergeArray(trip.otherProblems?.image, extractPaths("otherProblemsImage")),
       };
     }
 
@@ -178,15 +224,16 @@ const updateTripDetailsByDriver = async (req, res) => {
 
     res.status(200).json({
       message: "✅ Trip details updated successfully",
-      assignment,
+      assignment: { _id: assignment._id, tripDetails: assignment.tripDetails }
     });
+
   } catch (err) {
     console.error("❌ Trip update error:", err);
     res.status(500).json({ message: "Server error", error: err.message });
   }
 };
 
-// ✅ Get all active cabs assigned by the logged-in admin
+
 const getAssignCab = async (req, res) => {
   try {
     const adminId = req.admin._id;
@@ -366,6 +413,8 @@ const EditDriverProfile = async (req, res) => {
 };
 
 module.exports = {
+  getFreeCabsForDriver,
+  freeCabDriver,
   assignCab,
   getAssignCab,
   unassignCab,
