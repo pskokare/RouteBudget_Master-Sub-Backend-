@@ -27,4 +27,6 @@ router.get('/freeCabsAndDrivers',authMiddleware,freeCabDriver )
 
 router.get('/driver/free-cabs', driverAuthMiddleware, getFreeCabsForDriver);
 
+
+
 module.exports = router;

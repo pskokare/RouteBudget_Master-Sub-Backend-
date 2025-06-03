@@ -16,7 +16,7 @@ const server = http.createServer(app)
 // Enable CORS for all routes
 app.use(
   cors({
-    origin: ["*"],
+    origin: "*",
     methods: ["GET", "POST", "PUT" ,"PATCH", "DELETE", "OPTIONS"],
     credentials: true,
     allowedHeaders: ["Content-Type", "Authorization"],
