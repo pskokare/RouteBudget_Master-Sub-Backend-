@@ -119,7 +119,7 @@ const updateTripDetailsByDriver = async (req, res) => {
 
     const assignment = await CabAssignment.findOne({
       driver: driverId,
-      status: { $ne: "completed" },
+      // status: { $ne: "completed" },
     }).select('tripDetails driver cab status');
 
     if (!assignment) {
